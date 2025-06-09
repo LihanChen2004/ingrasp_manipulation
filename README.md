@@ -4,6 +4,8 @@
 
 Repository for the paper _Robotic In-Hand Manipulation for Large-Range Precise Object Movement: The RGMC Champion Solution_, IEEE Robotics and Automation Letters, 2024.
 
+## 1. Overview
+
 In this repository, we provide:
 
 - The algorithm for our proposed in-grasp object movement approach.
@@ -15,48 +17,61 @@ We do not provide code related to the hardware implementation, as it depends on 
   <img src="./docs/ingrasp_manipulation_simulation.gif" alt="MuJoCo simulation" width="50%" />
 </div>
 
-## Installation
+## 2. Quick Start
 
-1. Install ROS Noetic.
+### 2.1 Setup Environment
 
-1. Create a conda virtual env and install [Pinocchio](https://github.com/stack-of-tasks/pinocchio):
+- [Docker](https://docs.docker.com/engine/install/)
+- [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+- 允许本地的 Docker 容器访问主机的 X11 显示
 
-   ```bash
-   conda create -n <YOUR_ENV_NAME> -c conda-forge python=3.9 pinocchio
-   ```
+    ```bash
+    xhost +local:docker
+    ```
 
-1. In your python env:
+### 2.2 Clone the project
 
-   ```bash
-   pip install mujoco==3.1.3
-   pip install dm_control==1.0.16
-   pip install rospkg
-   ```
+```bash
+mkdir -p ~/ros_ws && \
+      cd ~/ros_ws && \
+      git clone --recursive https://github.com/LihanChen2004/ingrasp_manipulation.git src/ingrasp_manipulation
+```
 
-1. Clone this repo into a ROS workspace.
+### 2.3 Create Container
 
-1. Build the workspace:
-   ```
-   cd <YOUR_WORKSPACE>
-   catkin build
-   ```
+```bash
+docker build -t ingrasp_manipulation ./src/ingrasp_manipulation
+```
 
-## Usage (Simulation)
+```bash
+docker run -it --rm --name ingrasp_manipulation \
+  --network host \
+  --runtime nvidia \
+  --gpus all \
+  -e NVIDIA_DRIVER_CAPABILITIES=all \
+  -e "DISPLAY=$DISPLAY" \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v /dev:/dev \
+  -v $(pwd)/src:/root/ros_ws/src \
+  ingrasp_manipulation
+```
+
+### 2.4 Usage (Simulation)
 
 Run the mujoco simulation only (no motion):
 
 ```bash
 # in your python env
-cd leap_task_A/scripts
-source ../../../../devel/setup.bash
-python leaphand_mujoco.py
+cd src/ingrasp_manipulation/leap_task_A/scripts
+source ../../../../devel/setup.zsh
+uv run leaphand_mujoco.py
 ```
 
 Run the in-grasp object movement:
 
 ```bash
 # in your python env
-cd leap_task_A/scripts
-source ../../../../devel/setup.bash
-python leaphand_control.py
+cd src/ingrasp_manipulation/leap_task_A/scripts
+source ../../../../devel/setup.zsh
+uv run leaphand_control.py
 ```
