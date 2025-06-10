@@ -3,9 +3,9 @@ import sys
 from pathlib import Path
 from time import perf_counter
 
+import leap_utils.mingrui.utils_calc as ucalc
 import numpy as np
 import pinocchio as pin
-import rospkg
 from scipy.optimize import minimize
 from scipy.spatial.transform import Rotation as sciR
 
@@ -15,8 +15,6 @@ if "ROS_MASTER_URI" not in os.environ:
     repo_root_dir = current_file.parents[3]
     sys.path.append(str(repo_root_dir / "leap_utils" / "src"))
     os.environ["ROS_PACKAGE_PATH"] = str(repo_root_dir)
-
-import leap_utils.mingrui.utils_calc as ucalc
 
 
 class LeapHandPinocchio:
@@ -28,8 +26,18 @@ class LeapHandPinocchio:
         self.part_joints_name = {}
         self.part_joints_name["finger0"] = ["joint_0", "joint_1", "joint_2", "joint_3"]
         self.part_joints_name["finger1"] = ["joint_4", "joint_5", "joint_6", "joint_7"]
-        self.part_joints_name["finger2"] = ["joint_8", "joint_9", "joint_10", "joint_11"]
-        self.part_joints_name["thumb"] = ["joint_12", "joint_13", "joint_14", "joint_15"]
+        self.part_joints_name["finger2"] = [
+            "joint_8",
+            "joint_9",
+            "joint_10",
+            "joint_11",
+        ]
+        self.part_joints_name["thumb"] = [
+            "joint_12",
+            "joint_13",
+            "joint_14",
+            "joint_15",
+        ]
         self.part_joints_name["hand"] = (
             self.part_joints_name["finger0"]
             + self.part_joints_name["finger1"]
@@ -53,7 +61,9 @@ class LeapHandPinocchio:
         self.joints_name_to_id = {}
         for id, name in enumerate(self.model.names):
             if name != "universe":
-                self.joints_name_to_id[name] = id - 1  # only used when interacting with pinocchio
+                self.joints_name_to_id[name] = (
+                    id - 1
+                )  # only used when interacting with pinocchio
 
         self.part_joints_id = {}
         for part_name, joints_name in self.part_joints_name.items():
@@ -67,7 +77,9 @@ class LeapHandPinocchio:
         # id: 0 ~ 15, used for specifying input joint pos
         self.joints_id_to_lower_limit = self.model.lowerPositionLimit
         self.joints_id_to_upper_limit = self.model.upperPositionLimit
-        self.joints_id_to_upper_limit[self.joints_name_to_id["joint_12"]] = 1.9  # manually adjusted
+        self.joints_id_to_upper_limit[self.joints_name_to_id["joint_12"]] = (
+            1.9  # manually adjusted
+        )
 
     def renewModelAndData(self):
         self.model = pin.buildModelFromUrdf(self.urdf_path)
@@ -130,7 +142,10 @@ class LeapHandPinocchio:
         This should be called after updateFKvel
         """
         data = pin.getFrameVelocity(
-            self.model, self.data, self.model.getFrameId(frame_name), pin.ReferenceFrame.LOCAL_WORLD_ALIGNED
+            self.model,
+            self.data,
+            self.model.getFrameId(frame_name),
+            pin.ReferenceFrame.LOCAL_WORLD_ALIGNED,
         )
         linear = data.linear
         angular = data.angular
@@ -146,7 +161,9 @@ class LeapHandPinocchio:
         pin.computeJointJacobians(self.model, self.data, q_pin)  # call FK internally
         pin.updateFramePlacements(self.model, self.data)
 
-    def getGlobalJacobian(self, part_name, part_joint_pos=None, local_position=None, joint_part_name=None):
+    def getGlobalJacobian(
+        self, part_name, part_joint_pos=None, local_position=None, joint_part_name=None
+    ):
         """
         input:
             part_name: which part the target tcp belongs to.
@@ -163,24 +180,34 @@ class LeapHandPinocchio:
             )
         else:
             jaco_pin = pin.getFrameJacobian(
-                self.model, self.data, frame_id=self.tcp_links_id[part_name], reference_frame=pin.LOCAL_WORLD_ALIGNED
+                self.model,
+                self.data,
+                frame_id=self.tcp_links_id[part_name],
+                reference_frame=pin.LOCAL_WORLD_ALIGNED,
             )
 
         return jaco_pin[:, self.part_joints_id[joint_part_name]]
 
     def getFrameGlobalJacobian(self, frame_name, joint_part_name=None):
         jaco_pin = pin.getFrameJacobian(
-            self.model, self.data, frame_id=self.model.getFrameId(frame_name), reference_frame=pin.LOCAL_WORLD_ALIGNED
+            self.model,
+            self.data,
+            frame_id=self.model.getFrameId(frame_name),
+            reference_frame=pin.LOCAL_WORLD_ALIGNED,
         )
         return jaco_pin[:, self.part_joints_id[joint_part_name]]
 
-    def calcFingerPoseError(self, finger_name, finger_target_pose, finger_joint_pos, local_position):
+    def calcFingerPoseError(
+        self, finger_name, finger_target_pose, finger_joint_pos, local_position
+    ):
         err = np.zeros((6,))
         finger_target_pos = finger_target_pose[0:3]
         finger_target_ori = sciR.from_quat(finger_target_pose[3:7])
 
         self.updateFK(finger_name, finger_joint_pos)
-        finger_pos, finger_quat = self.getTcpGlobalPose(finger_name, local_position=local_position)
+        finger_pos, finger_quat = self.getTcpGlobalPose(
+            finger_name, local_position=local_position
+        )
         err[0:3] = finger_pos - finger_target_pos
         err[3:6] = (sciR.from_quat(finger_quat) * finger_target_ori.inv()).as_rotvec()
 
@@ -189,10 +216,19 @@ class LeapHandPinocchio:
 
         return err
 
-    def fingerIKSQP(self, finger_name, finger_target_pose, weights, finger_joint_pos_init, local_position=None):  # noqa: PLR0913
+    def fingerIKSQP(
+        self,
+        finger_name,
+        finger_target_pose,
+        weights,
+        finger_joint_pos_init,
+        local_position=None,
+    ):  # noqa: PLR0913
         t_ik = perf_counter()
 
-        finger_target_pos, finger_target_ori = ucalc.isometry3dToPosOri(finger_target_pose)
+        finger_target_pos, finger_target_ori = ucalc.isometry3dToPosOri(
+            finger_target_pose
+        )
         self.curr_err = None
 
         def calcTargetError(finger_joint_pos):
@@ -200,9 +236,13 @@ class LeapHandPinocchio:
             err = np.zeros((6,))
 
             self.updateFK(finger_name, finger_joint_pos)
-            finger_pos, finger_quat = self.getTcpGlobalPose(finger_name, local_position=local_position)
+            finger_pos, finger_quat = self.getTcpGlobalPose(
+                finger_name, local_position=local_position
+            )
             err[0:3] = finger_pos - finger_target_pos
-            err[3:6] = (sciR.from_quat(finger_quat) * finger_target_ori.inv()).as_rotvec()
+            err[3:6] = (
+                sciR.from_quat(finger_quat) * finger_target_ori.inv()
+            ).as_rotvec()
 
             err = err.reshape(-1, 1)
             self.curr_err = err
@@ -220,7 +260,10 @@ class LeapHandPinocchio:
 
             # get all jacobians
             jaco = self.getGlobalJacobian(
-                finger_name, finger_joint_pos, local_position=local_position, joint_part_name=finger_name
+                finger_name,
+                finger_joint_pos,
+                local_position=local_position,
+                joint_part_name=finger_name,
             )
 
             object_jaco = err.T @ weights @ jaco
@@ -229,9 +272,15 @@ class LeapHandPinocchio:
 
         joint_pos_init = finger_joint_pos_init.copy()
         # bounds
-        joint_pos_lb = np.array(self.joints_id_to_lower_limit)[self.part_joints_id[finger_name]]
-        joint_pos_ub = np.array(self.joints_id_to_upper_limit)[self.part_joints_id[finger_name]]
-        joint_pos_bounds = [(joint_pos_lb[i], joint_pos_ub[i]) for i in range(joint_pos_lb.shape[0])]
+        joint_pos_lb = np.array(self.joints_id_to_lower_limit)[
+            self.part_joints_id[finger_name]
+        ]
+        joint_pos_ub = np.array(self.joints_id_to_upper_limit)[
+            self.part_joints_id[finger_name]
+        ]
+        joint_pos_bounds = [
+            (joint_pos_lb[i], joint_pos_ub[i]) for i in range(joint_pos_lb.shape[0])
+        ]
 
         res = minimize(
             fun=objectFunction,
@@ -269,7 +318,9 @@ class LeapHandPinocchio:
         Our proposed in-grasp trajectory optimization approach.
         """
         hand_joint_pos_init = np.asarray(hand_joint_pos_init)
-        object_target_pos, object_target_ori = ucalc.isometry3dToPosOri(object_target_pose)
+        object_target_pos, object_target_ori = ucalc.isometry3dToPosOri(
+            object_target_pose
+        )
 
         fingers_target_rel_pose = {}
         if thumb_target_rel_pose is not None:
@@ -282,7 +333,9 @@ class LeapHandPinocchio:
             fingers_target_rel_pose["finger2"] = finger2_target_rel_pose
         fingers_target_rel_pos_ori = {}
         for finger_name, target_rel_pose in fingers_target_rel_pose.items():
-            fingers_target_rel_pos_ori[finger_name] = ucalc.isometry3dToPosOri(target_rel_pose)
+            fingers_target_rel_pos_ori[finger_name] = ucalc.isometry3dToPosOri(
+                target_rel_pose
+            )
 
         fingers_local_position = {}
         fingers_local_position["finger0"] = finger0_local_position
@@ -291,12 +344,20 @@ class LeapHandPinocchio:
         fingers_local_position["thumb"] = thumb_local_position
 
         # init value
-        object_pos_init, object_rotvec_init = ucalc.isometry3dToPosRotVec(object_pose_init)
-        val_init = np.concatenate([object_pos_init, object_rotvec_init, hand_joint_pos_init], axis=0)
+        object_pos_init, object_rotvec_init = ucalc.isometry3dToPosRotVec(
+            object_pose_init
+        )
+        val_init = np.concatenate(
+            [object_pos_init, object_rotvec_init, hand_joint_pos_init], axis=0
+        )
         traj_val_init = np.tile(val_init, T + 1)
         # bounds
-        joint_pos_lb = np.array(self.joints_id_to_lower_limit)[self.part_joints_id["hand"]]
-        joint_pos_ub = np.array(self.joints_id_to_upper_limit)[self.part_joints_id["hand"]]
+        joint_pos_lb = np.array(self.joints_id_to_lower_limit)[
+            self.part_joints_id["hand"]
+        ]
+        joint_pos_ub = np.array(self.joints_id_to_upper_limit)[
+            self.part_joints_id["hand"]
+        ]
         val_bounds = [(-10, 10) for _ in range(6)] + [
             (joint_pos_lb[i], joint_pos_ub[i]) for i in range(joint_pos_lb.shape[0])
         ]
@@ -312,13 +373,22 @@ class LeapHandPinocchio:
         def calcTargetError(val):
             t1 = perf_counter()
             val = val.reshape(T + 1, -1)
-            traj_object_pos, traj_object_rotvec, traj_hand_joint_pos = val[:, 0:3], val[:, 3:6], val[:, 6 : 6 + 16]
+            traj_object_pos, traj_object_rotvec, traj_hand_joint_pos = (
+                val[:, 0:3],
+                val[:, 3:6],
+                val[:, 6 : 6 + 16],
+            )
 
             err_list = []
             # ------------ object pose in world frame at {T} -------------
-            object_pos, object_rotvec = traj_object_pos[-1, :], traj_object_rotvec[-1, :]
+            object_pos, object_rotvec = (
+                traj_object_pos[-1, :],
+                traj_object_rotvec[-1, :],
+            )
             err_list.extend(object_pos - object_target_pos)
-            err_list.extend((sciR.from_rotvec(object_rotvec) * object_target_ori.inv()).as_rotvec())
+            err_list.extend(
+                (sciR.from_rotvec(object_rotvec) * object_target_ori.inv()).as_rotvec()
+            )
 
             # ------------ finger pose in object frame at {t = 1,...T} ------------
             fingers_pos = {}
@@ -330,27 +400,45 @@ class LeapHandPinocchio:
             for t in range(1, T + 1):
                 self.updateFK("hand", traj_hand_joint_pos[t, :])
                 for finger_name in fingers_target_rel_pose.keys():
-                    fingers_pos[finger_name][t - 1, :], fingers_quat[finger_name][t - 1, :] = self.getTcpGlobalPose(
+                    (
+                        fingers_pos[finger_name][t - 1, :],
+                        fingers_quat[finger_name][t - 1, :],
+                    ) = self.getTcpGlobalPose(
                         finger_name, local_position=fingers_local_position[finger_name]
                     )
 
             object_pose_inv = ucalc.batchIsometry3dInverse(
-                ucalc.batchPosRotVec2Isometry3d(traj_object_pos[1:, :], traj_object_rotvec[1:, :])
+                ucalc.batchPosRotVec2Isometry3d(
+                    traj_object_pos[1:, :], traj_object_rotvec[1:, :]
+                )
             )
 
-            for finger_name, (finger_target_rel_pos, finger_target_rel_ori) in fingers_target_rel_pos_ori.items():
-                finger_pos, finger_quat = fingers_pos[finger_name], fingers_quat[finger_name]
+            for finger_name, (
+                finger_target_rel_pos,
+                finger_target_rel_ori,
+            ) in fingers_target_rel_pos_ori.items():
+                finger_pos, finger_quat = (
+                    fingers_pos[finger_name],
+                    fingers_quat[finger_name],
+                )
                 finger_pose = ucalc.batchPosQuat2Isometry3d(finger_pos, finger_quat)
                 finger_rel_pose = np.matmul(object_pose_inv, finger_pose)
-                finger_rel_pos_err = finger_rel_pose[:, 0:3, 3] - np.tile(finger_target_rel_pos, (T, 1))
+                finger_rel_pos_err = finger_rel_pose[:, 0:3, 3] - np.tile(
+                    finger_target_rel_pos, (T, 1)
+                )
                 finger_rel_ori_err = (
-                    sciR.from_matrix(finger_rel_pose[:, 0:3, 0:3]) * finger_target_rel_ori.inv()
+                    sciR.from_matrix(finger_rel_pose[:, 0:3, 0:3])
+                    * finger_target_rel_ori.inv()
                 ).as_rotvec()
-                finger_rel_pose_err = np.hstack([finger_rel_pos_err, finger_rel_ori_err])
+                finger_rel_pose_err = np.hstack(
+                    [finger_rel_pos_err, finger_rel_ori_err]
+                )
                 err_list.extend(finger_rel_pose_err.reshape(-1))
 
             # ------------ joint vel between t and t-1 (t = 1,...,T) ------------
-            traj_hand_joint_vel = (traj_hand_joint_pos[1:, :] - traj_hand_joint_pos[0:-1, :]) / delta_t
+            traj_hand_joint_vel = (
+                traj_hand_joint_pos[1:, :] - traj_hand_joint_pos[0:-1, :]
+            ) / delta_t
             err_list.extend(traj_hand_joint_vel.reshape(-1))
 
             err = np.asarray(err_list).reshape(-1, 1)
@@ -364,7 +452,11 @@ class LeapHandPinocchio:
 
         def objectJacobian(val):
             val = val.reshape(T + 1, -1)
-            traj_object_pos, traj_object_rotvec, traj_hand_joint_pos = val[:, 0:3], val[:, 3:6], val[:, 6 : 6 + 16]
+            traj_object_pos, traj_object_rotvec, traj_hand_joint_pos = (
+                val[:, 0:3],
+                val[:, 3:6],
+                val[:, 6 : 6 + 16],
+            )
 
             err = self.curr_err  # to avoid double computing the error, slightly reducing optimization time cost
             jaco_list = []
@@ -374,8 +466,12 @@ class LeapHandPinocchio:
             whole_jaco[0:3, -1, 0:3] = np.eye(3)
 
             object_rotvec = traj_object_rotvec[-1, :]
-            object_ori_err = (sciR.from_rotvec(object_rotvec) * object_target_ori.inv()).as_rotvec()
-            whole_jaco[3:6, -1, 3:6] = ucalc.jacoLeftBCHInverse(object_ori_err) @ ucalc.jacoLeftBCH(object_rotvec)
+            object_ori_err = (
+                sciR.from_rotvec(object_rotvec) * object_target_ori.inv()
+            ).as_rotvec()
+            whole_jaco[3:6, -1, 3:6] = ucalc.jacoLeftBCHInverse(
+                object_ori_err
+            ) @ ucalc.jacoLeftBCH(object_rotvec)
             jaco_list.append(whole_jaco.reshape(6, -1))
 
             # ------------ finger pose in object frame at {t = 1,...T} ------------
@@ -388,17 +484,26 @@ class LeapHandPinocchio:
                 fingers_jaco[finger_name] = np.zeros((T, 6, 4))
 
             for t in range(1, T + 1):
-                self.updateJacobians("hand", traj_hand_joint_pos[t, :])  # will call FK internally
+                self.updateJacobians(
+                    "hand", traj_hand_joint_pos[t, :]
+                )  # will call FK internally
                 for finger_name in fingers_target_rel_pose.keys():
-                    fingers_pos[finger_name][t - 1, :], fingers_quat[finger_name][t - 1, :] = self.getTcpGlobalPose(
+                    (
+                        fingers_pos[finger_name][t - 1, :],
+                        fingers_quat[finger_name][t - 1, :],
+                    ) = self.getTcpGlobalPose(
                         finger_name, local_position=fingers_local_position[finger_name]
                     )
                     fingers_jaco[finger_name][t - 1, :, :] = self.getGlobalJacobian(
-                        finger_name, local_position=fingers_local_position[finger_name], joint_part_name=finger_name
+                        finger_name,
+                        local_position=fingers_local_position[finger_name],
+                        joint_part_name=finger_name,
                     )
 
             object_pose_inv = ucalc.batchIsometry3dInverse(
-                ucalc.batchPosRotVec2Isometry3d(traj_object_pos[1:, :], traj_object_rotvec[1:, :])
+                ucalc.batchPosRotVec2Isometry3d(
+                    traj_object_pos[1:, :], traj_object_rotvec[1:, :]
+                )
             )
             object_jaco = np.zeros((T, 6, 6))  # T = 1, ..., T
             object_jaco[:, 0:3, 0:3] = np.tile(np.eye(3), (T, 1, 1))
@@ -406,23 +511,34 @@ class LeapHandPinocchio:
             transform_mat = ucalc.batchDiagRotMat(object_pose_inv[:, 0:3, 0:3])
             transformed_object_jaco = np.matmul(transform_mat, object_jaco)
 
-            for finger_name, (finger_target_rel_pos, finger_target_rel_ori) in fingers_target_rel_pos_ori.items():
-                finger_pose = ucalc.batchPosQuat2Isometry3d(fingers_pos[finger_name], fingers_quat[finger_name])
+            for finger_name, (
+                finger_target_rel_pos,
+                finger_target_rel_ori,
+            ) in fingers_target_rel_pos_ori.items():
+                finger_pose = ucalc.batchPosQuat2Isometry3d(
+                    fingers_pos[finger_name], fingers_quat[finger_name]
+                )
                 finger_rel_pose = np.matmul(object_pose_inv, finger_pose)
                 finger_rel_pos = finger_rel_pose[:, 0:3, 3]
                 finger_rel_ori_err = (
-                    sciR.from_matrix(finger_rel_pose[:, 0:3, 0:3]) * finger_target_rel_ori.inv()
+                    sciR.from_matrix(finger_rel_pose[:, 0:3, 0:3])
+                    * finger_target_rel_ori.inv()
                 ).as_rotvec()
 
-                temp_jaco = np.zeros((T, 6, 6 + 16))  # the variable only include the joint positions at time t
+                temp_jaco = np.zeros(
+                    (T, 6, 6 + 16)
+                )  # the variable only include the joint positions at time t
                 temp_jaco[:, :, 0:6] = -np.matmul(
-                    ucalc.wrenchTransformationMatrix(finger_rel_pos), transformed_object_jaco
+                    ucalc.wrenchTransformationMatrix(finger_rel_pos),
+                    transformed_object_jaco,
                 )
-                temp_jaco[:, :, 6 + np.asarray(self.finger_joints_id_in_hand[finger_name])] = np.matmul(
-                    transform_mat, fingers_jaco[finger_name]
-                )
+                temp_jaco[
+                    :, :, 6 + np.asarray(self.finger_joints_id_in_hand[finger_name])
+                ] = np.matmul(transform_mat, fingers_jaco[finger_name])
                 # partial error / partial phi (spatial twist)
-                temp_jaco[:, 3:6, :] = np.matmul(ucalc.jacoLeftBCHInverse(finger_rel_ori_err), temp_jaco[:, 3:6, :])
+                temp_jaco[:, 3:6, :] = np.matmul(
+                    ucalc.jacoLeftBCHInverse(finger_rel_ori_err), temp_jaco[:, 3:6, :]
+                )
 
                 whole_jaco = np.zeros((T, 6, T + 1, 6 + 16))
                 for t in range(T):
@@ -459,10 +575,18 @@ class LeapHandPinocchio:
             traj_constraints = np.zeros((T, 4))
             for t in range(1, T + 1):
                 self.updateFK("hand", traj_hand_joint_pos[t, :])
-                critical_frame_0_0_pos, _ = self.getFrameGlobalPose(frame_name="critical_link_0_0")
-                critical_frame_1_0_pos, _ = self.getFrameGlobalPose(frame_name="critical_link_1_0")
-                critical_frame_0_1_pos, _ = self.getFrameGlobalPose(frame_name="critical_link_0_1")
-                critical_frame_1_1_pos, _ = self.getFrameGlobalPose(frame_name="critical_link_1_1")
+                critical_frame_0_0_pos, _ = self.getFrameGlobalPose(
+                    frame_name="critical_link_0_0"
+                )
+                critical_frame_1_0_pos, _ = self.getFrameGlobalPose(
+                    frame_name="critical_link_1_0"
+                )
+                critical_frame_0_1_pos, _ = self.getFrameGlobalPose(
+                    frame_name="critical_link_0_1"
+                )
+                critical_frame_1_1_pos, _ = self.getFrameGlobalPose(
+                    frame_name="critical_link_1_1"
+                )
                 dist_0 = np.linalg.norm(critical_frame_0_0_pos - critical_frame_1_0_pos)
                 dist_1 = np.linalg.norm(critical_frame_0_0_pos - critical_frame_1_1_pos)
                 dist_2 = np.linalg.norm(critical_frame_0_1_pos - critical_frame_1_0_pos)
@@ -481,33 +605,51 @@ class LeapHandPinocchio:
 
             whole_jaco = np.zeros((T, 4, T + 1, 6 + 16))
             for t in range(1, T + 1):
-                self.updateJacobians("hand", traj_hand_joint_pos[t, :])  # will call FK internally
-                critical_frame_0_0_pos, _ = self.getFrameGlobalPose(frame_name="critical_link_0_0")
-                critical_frame_1_0_pos, _ = self.getFrameGlobalPose(frame_name="critical_link_1_0")
-                critical_frame_0_1_pos, _ = self.getFrameGlobalPose(frame_name="critical_link_0_1")
-                critical_frame_1_1_pos, _ = self.getFrameGlobalPose(frame_name="critical_link_1_1")
+                self.updateJacobians(
+                    "hand", traj_hand_joint_pos[t, :]
+                )  # will call FK internally
+                critical_frame_0_0_pos, _ = self.getFrameGlobalPose(
+                    frame_name="critical_link_0_0"
+                )
+                critical_frame_1_0_pos, _ = self.getFrameGlobalPose(
+                    frame_name="critical_link_1_0"
+                )
+                critical_frame_0_1_pos, _ = self.getFrameGlobalPose(
+                    frame_name="critical_link_0_1"
+                )
+                critical_frame_1_1_pos, _ = self.getFrameGlobalPose(
+                    frame_name="critical_link_1_1"
+                )
 
-                critical_frame_0_0_jaco = self.getFrameGlobalJacobian("critical_link_0_0", joint_part_name="hand")
-                critical_frame_1_0_jaco = self.getFrameGlobalJacobian("critical_link_1_0", joint_part_name="hand")
-                critical_frame_0_1_jaco = self.getFrameGlobalJacobian("critical_link_0_1", joint_part_name="hand")
-                critical_frame_1_1_jaco = self.getFrameGlobalJacobian("critical_link_1_1", joint_part_name="hand")
+                critical_frame_0_0_jaco = self.getFrameGlobalJacobian(
+                    "critical_link_0_0", joint_part_name="hand"
+                )
+                critical_frame_1_0_jaco = self.getFrameGlobalJacobian(
+                    "critical_link_1_0", joint_part_name="hand"
+                )
+                critical_frame_0_1_jaco = self.getFrameGlobalJacobian(
+                    "critical_link_0_1", joint_part_name="hand"
+                )
+                critical_frame_1_1_jaco = self.getFrameGlobalJacobian(
+                    "critical_link_1_1", joint_part_name="hand"
+                )
 
                 diff = critical_frame_0_0_pos - critical_frame_1_0_pos
-                whole_jaco[t - 1, 0, t, 6:] = (diff / np.linalg.norm(diff)).reshape(1, -1) @ (
-                    critical_frame_0_0_jaco[0:3, :] - critical_frame_1_0_jaco[0:3, :]
-                )
+                whole_jaco[t - 1, 0, t, 6:] = (diff / np.linalg.norm(diff)).reshape(
+                    1, -1
+                ) @ (critical_frame_0_0_jaco[0:3, :] - critical_frame_1_0_jaco[0:3, :])
                 diff = critical_frame_0_0_pos - critical_frame_1_1_pos
-                whole_jaco[t - 1, 1, t, 6:] = (diff / np.linalg.norm(diff)).reshape(1, -1) @ (
-                    critical_frame_0_0_jaco[0:3, :] - critical_frame_1_1_jaco[0:3, :]
-                )
+                whole_jaco[t - 1, 1, t, 6:] = (diff / np.linalg.norm(diff)).reshape(
+                    1, -1
+                ) @ (critical_frame_0_0_jaco[0:3, :] - critical_frame_1_1_jaco[0:3, :])
                 diff = critical_frame_0_1_pos - critical_frame_1_0_pos
-                whole_jaco[t - 1, 2, t, 6:] = (diff / np.linalg.norm(diff)).reshape(1, -1) @ (
-                    critical_frame_0_1_jaco[0:3, :] - critical_frame_1_0_jaco[0:3, :]
-                )
+                whole_jaco[t - 1, 2, t, 6:] = (diff / np.linalg.norm(diff)).reshape(
+                    1, -1
+                ) @ (critical_frame_0_1_jaco[0:3, :] - critical_frame_1_0_jaco[0:3, :])
                 diff = critical_frame_0_1_pos - critical_frame_1_1_pos
-                whole_jaco[t - 1, 3, t, 6:] = (diff / np.linalg.norm(diff)).reshape(1, -1) @ (
-                    critical_frame_0_1_jaco[0:3, :] - critical_frame_1_1_jaco[0:3, :]
-                )
+                whole_jaco[t - 1, 3, t, 6:] = (diff / np.linalg.norm(diff)).reshape(
+                    1, -1
+                ) @ (critical_frame_0_1_jaco[0:3, :] - critical_frame_1_1_jaco[0:3, :])
 
             return whole_jaco.reshape(T * 4, (T + 1) * (6 + 16))
 

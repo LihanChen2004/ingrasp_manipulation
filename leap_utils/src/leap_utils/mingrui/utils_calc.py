@@ -182,7 +182,9 @@ def transformPositions(positions, target_frame_pose=None, target_frame_pose_inv=
     if (target_frame_pose is None) and (target_frame_pose_inv is None):
         raise NameError("Both target_frame_pose and target_frame_pose_inv are None !")
     elif (target_frame_pose is not None) and (target_frame_pose_inv is not None):
-        raise NameError("Both target_frame_pose and target_frame_pose_inv are not None !")
+        raise NameError(
+            "Both target_frame_pose and target_frame_pose_inv are not None !"
+        )
 
     positions = np.array(positions)
     original_shape = positions.shape
@@ -212,11 +214,21 @@ def transformPositions(positions, target_frame_pose=None, target_frame_pose_inv=
 """
 
 
-def transformVelocities(velocities, target_frame_relative_quat=None, target_frame_relative_quat_inv=None):
-    if (target_frame_relative_quat is None) and (target_frame_relative_quat_inv is None):
-        raise NameError("Both target_frame_relative_quat and target_frame_relative_quat_inv are None !")
-    elif (target_frame_relative_quat is not None) and (target_frame_relative_quat_inv is not None):
-        raise NameError("Both target_frame_relative_quat and target_frame_relative_quat_inv are not None !")
+def transformVelocities(
+    velocities, target_frame_relative_quat=None, target_frame_relative_quat_inv=None
+):
+    if (target_frame_relative_quat is None) and (
+        target_frame_relative_quat_inv is None
+    ):
+        raise NameError(
+            "Both target_frame_relative_quat and target_frame_relative_quat_inv are None !"
+        )
+    elif (target_frame_relative_quat is not None) and (
+        target_frame_relative_quat_inv is not None
+    ):
+        raise NameError(
+            "Both target_frame_relative_quat and target_frame_relative_quat_inv are not None !"
+        )
 
     velocities = np.array(velocities)
     original_shape = velocities.shape
@@ -230,7 +242,9 @@ def transformVelocities(velocities, target_frame_relative_quat=None, target_fram
     elif target_frame_relative_quat_inv is not None:
         rot_matrix = sciR.from_quat(target_frame_relative_quat_inv).as_matrix()
 
-    rot_operator = np.block([[rot_matrix, np.zeros((3, 3))], [np.zeros((3, 3)), rot_matrix]])
+    rot_operator = np.block(
+        [[rot_matrix, np.zeros((3, 3))], [np.zeros((3, 3)), rot_matrix]]
+    )
 
     transformed_velocities = (rot_operator @ velocities.T).T
     return transformed_velocities.reshape(original_shape)
@@ -288,7 +302,9 @@ def jacoDeRotVecToAngularVel(rotvec):
     R_T = np.transpose(R, (0, 2, 1))
     I3 = np.tile(np.eye(3), (n, 1, 1))
 
-    body_jaco = (np.matmul(r, r_T) + np.matmul((R_T - I3), skew(r))) / np.linalg.norm(r, axis=1, keepdims=True) ** 2
+    body_jaco = (np.matmul(r, r_T) + np.matmul((R_T - I3), skew(r))) / np.linalg.norm(
+        r, axis=1, keepdims=True
+    ) ** 2
 
     # avoid dividing by zero
     zero_index = np.where(np.linalg.norm(r.reshape(-1, 3), axis=1) < 1e-8)
@@ -325,7 +341,9 @@ def jacoLeftBCH(rotvec):
         + ((1.0 - np.cos(angle)) / angle) * skew(axis)
     )
 
-    J_l[zero_index, ...] = np.tile(np.eye(3), (len(zero_index), 1, 1))  # dealing with zero rotvec
+    J_l[zero_index, ...] = np.tile(
+        np.eye(3), (len(zero_index), 1, 1)
+    )  # dealing with zero rotvec
 
     return J_l.squeeze()
 
@@ -350,11 +368,14 @@ def jacoLeftBCHInverse(rotvec):
 
     J_l_inv = (
         angle / 2.0 * 1.0 / np.tan(angle / 2.0) * I3
-        + (1.0 - angle / 2.0 * 1.0 / np.tan(angle / 2.0)) * np.matmul(axis, axis.transpose(0, 2, 1))
+        + (1.0 - angle / 2.0 * 1.0 / np.tan(angle / 2.0))
+        * np.matmul(axis, axis.transpose(0, 2, 1))
         - angle / 2.0 * skew(axis)
     )
 
-    J_l_inv[zero_index, ...] = np.tile(np.eye(3), (len(zero_index), 1, 1))  # dealing with zero rotvec
+    J_l_inv[zero_index, ...] = np.tile(
+        np.eye(3), (len(zero_index), 1, 1)
+    )  # dealing with zero rotvec
 
     return J_l_inv.squeeze()
 
